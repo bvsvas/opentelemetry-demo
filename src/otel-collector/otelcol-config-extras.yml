@@ -1,18 +1,56 @@
 # Copyright The OpenTelemetry Authors
 # SPDX-License-Identifier: Apache-2.0
 
-# extra settings to be merged into OpenTelemetry Collector configuration
-# do not delete this file
+# Broadcom DX O2 integration settings
+# Merged into the base otelcol-config.yml at collector startup.
+# Configure DXO2_ENDPOINT and DXO2_TOKEN in .env.override
 
-## Example configuration for sending data to your own OTLP HTTP backend
-## Note: the spanmetrics exporter must be included in the exporters array
-## if overriding the traces pipeline.
-##
-#  exporters:
-#    otlp_http/example:
-#      endpoint: <your-endpoint-url>
-#
-#  service:
-#    pipelines:
-#      traces:
-#        exporters: [spanmetrics, otlp_http/example]
+connectors:
+  spanmetrics:
+    dimensions:
+      - name: http.method
+      - name: http.request.method
+      - name: db.system
+      - name: db.system.name
+      - name: messaging.system
+      - name: rpc.system
+      - name: peer.service
+    aggregation_temporality: AGGREGATION_TEMPORALITY_DELTA
+
+exporters:
+  otlphttp/dxo2:
+    endpoint: '${env:DXO2_ENDPOINT}'
+    headers:
+      Authorization: "Bearer ${env:DXO2_TOKEN}"
+
+processors:
+  resource/dxo2:
+    attributes:
+      - action: insert
+        key: broadcomAgentTriplet
+        value: 'oteldemo-dxo2|OpenTelemetry|{service.name}'
+      - action: insert
+        key: dxotel.cluster
+        value: oteldemo-local
+  transform:
+    error_mode: ignore
+    trace_statements:
+      - context: span
+        statements:
+          - replace_pattern(name, "\\?.*", "")
+          - replace_match(name, "GET /api/products/*", "GET /api/products/{productId}")
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resourcedetection, memory_limiter, transform/sanitize_spans, transform, resource/dxo2]
+      exporters: [otlp_grpc/jaeger, debug, spanmetrics, otlphttp/dxo2]
+    metrics:
+      receivers: [docker_stats, httpcheck/frontend-proxy, hostmetrics, nginx, otlp, postgresql, redis, spanmetrics]
+      processors: [resourcedetection, memory_limiter, resource/dxo2]
+      exporters: [otlp_http/prometheus, debug, otlphttp/dxo2]
+    logs:
+      receivers: [otlp]
+      processors: [resourcedetection, memory_limiter, resource/dxo2]
+      exporters: [opensearch, debug]

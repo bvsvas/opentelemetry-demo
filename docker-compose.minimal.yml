@@ -745,6 +745,8 @@ services:
       - POSTGRES_PORT
       - POSTGRES_PASSWORD
       - GOMEMLIMIT=160MiB
+      - DXO2_ENDPOINT
+      - DXO2_TOKEN
 
   # Prometheus
   prometheus:
