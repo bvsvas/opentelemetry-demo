@@ -244,9 +244,22 @@ metadata:
 data:
   relay: |
     connectors:
-      spanmetrics: {}
+      spanmetrics: 
+        dimensions:
+        - name: http.method
+        - name: http.request.method
+        - name: db.system
+        - name: db.system.name
+        - name: messaging.system
+        - name: rpc.system
+        - name: peer.service
+        aggregation_temporality: AGGREGATION_TEMPORALITY_DELTA
     exporters:
       debug: {}
+      otlphttp/dxo2:
+        endpoint: '<<Replace DX O2 Endpoint>>'
+        headers:
+          Authorization: "Bearer <<Replace Agent Token>>"
       opensearch:
         http:
           endpoint: http://opensearch:9200
@@ -299,6 +312,18 @@ data:
         - action: insert
           from_attribute: k8s.pod.uid
           key: service.instance.id
+        - action: insert
+          key: broadcomAgentTriplet
+          value: 'oteldemo-dxo2|OpenTelemetry|{service.name}'
+        - action: insert
+          key: dxotel.cluster
+          value: oteldemo-srini
+        - action: insert
+          key: k8s.pod.name
+          value: default-pod
+        - action: insert
+          key: service.name
+          value: default-service
       resourcedetection:
         detectors:
         - env
@@ -366,6 +391,21 @@ data:
             static_configs:
             - targets:
               - ${env:MY_POD_IP}:8888
+            metric_relabel_configs:
+             - source_labels: [ __name__ ]
+               regex: ".*grpc_io.*"
+               action: drop
+             - target_label: "otelcol_name"
+               replacement: "oteldemo-dxo2"
+             - target_label: "otelcol_connector_name"
+               replacement: "otel-collector-self-monitoring"
+             - target_label: "otelcol_hostname"
+               replacement: "${env:MY_POD_IP}"
+             - target_label: "k8s_pod_name"
+               replacement: "${env:MY_POD_IP}"
+             - target_label: "broadcomAgentTriplet"
+               replacement: "{otelcol_name}|{otelcol_connector_name}|{otelcol_hostname}"
+
       redis:
         collection_interval: 10s
         endpoint: valkey-cart:6379
@@ -391,6 +431,7 @@ data:
         metrics:
           exporters:
           - otlphttp/prometheus
+          - otlphttp/dxo2
           - debug
           processors:
           - k8sattributes
@@ -408,6 +449,7 @@ data:
         traces:
           exporters:
           - otlp
+          - otlphttp/dxo2
           - debug
           - spanmetrics
           processors:
