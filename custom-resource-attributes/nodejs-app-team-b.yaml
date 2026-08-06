@@ -1,0 +1,52 @@
+# -----------------------------------------------------------------------------
+# NOTE: This deployment is an example for illustration purposes.
+# Please ensure you use the correct application image, configuration parameters,
+# and adjust resource requests/limits appropriately for your actual environment.
+# -----------------------------------------------------------------------------
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejs-app-team-b
+  namespace: otel-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nodejs-app-team-b
+  template:
+    metadata:
+      labels:
+        app: nodejs-app-team-b
+    spec:
+      containers:
+        - name: nodejs-app
+          image: ghcr.io/open-telemetry/opentelemetry-demo:1.2.0-frontend # Sample Node.js app
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector-custom:4317"
+            # Adding custom resource attributes via environment variable
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "broadcom_organization=Broadcom,broadcom_division=AOD,broadcom_github_repo=sample-repo-beta,broadcom_valuestream=APPNETA,broadcom_user_id=demo-user-02,service.name=nodejs-app-team-b"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nodejs-app-team-b
+  namespace: otel-demo
+spec:
+  selector:
+    app: nodejs-app-team-b
+  ports:
+    - port: 8080
+      targetPort: 8080

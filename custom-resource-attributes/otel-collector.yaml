@@ -1,0 +1,170 @@
+# -----------------------------------------------------------------------------
+# NOTE: This OpenTelemetry Collector deployment is an example for illustration 
+# purposes to demonstrate resource attribute derivation and manipulation.
+# 
+# Please ensure you review and use the correct collector image and versions,
+# configuration parameters, and adjust resource requests/limits appropriately 
+# for your actual production environment.
+# -----------------------------------------------------------------------------
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-custom
+  namespace: otel-demo
+data:
+  relay.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      # Guards against OOM under load; must run before any other processor
+      memory_limiter:
+        check_interval: 5s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+
+      # Use the resource processor to inject a static cluster attribute
+      resource:
+        attributes:
+          - action: insert
+            key: dxotel.cluster
+            value: oteldemo-srini
+
+      # Use transform processor to derive and inject custom attributes via OTTL
+      transform:
+        error_mode: ignore
+        
+        # Modify Trace Attributes
+        trace_statements:
+          - context: resource
+            statements:
+              # Derive broadcom_cost_center from broadcom_division
+              - set(attributes["broadcom_cost_center"], "CC-IMS-100") where attributes["broadcom_division"] == "IMS"
+              - set(attributes["broadcom_cost_center"], "CC-AOD-200") where attributes["broadcom_division"] == "AOD"
+              # Derive broadcom_support_tier based on broadcom_valuestream
+              - set(attributes["broadcom_support_tier"], "Tier-1") where attributes["broadcom_valuestream"] == "ITOM"
+              - set(attributes["broadcom_support_tier"], "Tier-2") where attributes["broadcom_valuestream"] == "APPNETA"
+          - context: span
+            statements:
+              # Set routing_priority based on the derived resource's support_tier
+              - set(attributes["routing_priority"], "critical") where resource.attributes["broadcom_support_tier"] == "Tier-1"
+              - set(attributes["routing_priority"], "standard") where resource.attributes["broadcom_support_tier"] != "Tier-1" and resource.attributes["broadcom_support_tier"] != nil
+
+        # Modify Metric Attributes
+        metric_statements:
+          - context: resource
+            statements:
+              # Derive broadcom_cost_center from broadcom_division
+              - set(attributes["broadcom_cost_center"], "CC-IMS-100") where attributes["broadcom_division"] == "IMS"
+              - set(attributes["broadcom_cost_center"], "CC-AOD-200") where attributes["broadcom_division"] == "AOD"
+              # Derive broadcom_support_tier based on broadcom_valuestream
+              - set(attributes["broadcom_support_tier"], "Tier-1") where attributes["broadcom_valuestream"] == "ITOM"
+              - set(attributes["broadcom_support_tier"], "Tier-2") where attributes["broadcom_valuestream"] == "APPNETA"
+          - context: datapoint
+            statements:
+              # Set routing_priority based on the derived resource's support_tier
+              - set(attributes["routing_priority"], "critical") where resource.attributes["broadcom_support_tier"] == "Tier-1"
+              - set(attributes["routing_priority"], "standard") where resource.attributes["broadcom_support_tier"] != "Tier-1" and resource.attributes["broadcom_support_tier"] != nil
+
+        # Modify Log Attributes
+        log_statements:
+          - context: resource
+            statements:
+              - set(attributes["broadcom_cost_center"], "CC-IMS-100") where attributes["broadcom_division"] == "IMS"
+              - set(attributes["broadcom_cost_center"], "CC-AOD-200") where attributes["broadcom_division"] == "AOD"
+              - set(attributes["broadcom_support_tier"], "Tier-1") where attributes["broadcom_valuestream"] == "ITOM"
+              - set(attributes["broadcom_support_tier"], "Tier-2") where attributes["broadcom_valuestream"] == "APPNETA"
+
+      # Batches telemetry before export; must run last in the pipeline
+      batch: {}
+
+    exporters:
+      # Debug exporter to verify attributes in the collector logs
+      debug:
+        verbosity: detailed
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, transform, batch]
+          exporters: [debug]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, transform, batch]
+          exporters: [debug]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, transform, batch]
+          exporters: [debug]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector-custom
+  namespace: otel-demo
+  labels:
+    app.kubernetes.io/name: otel-collector-custom
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector-custom
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otel-collector-custom
+    spec:
+      containers:
+        - name: opentelemetry-collector
+          image: otel/opentelemetry-collector-contrib:0.135.0 # matches opentelemetry-demo's collector image version
+          args:
+            - --config=/conf/relay.yaml
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          ports:
+            - containerPort: 4317
+              name: otlp
+            - containerPort: 4318
+              name: otlp-http
+          volumeMounts:
+            - name: otel-collector-config-vol
+              mountPath: /conf
+      volumes:
+        - name: otel-collector-config-vol
+          configMap:
+            name: otel-collector-custom
+            items:
+              - key: relay.yaml
+                path: relay.yaml
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector-custom
+  namespace: otel-demo
+spec:
+  selector:
+    app.kubernetes.io/name: otel-collector-custom
+  ports:
+    - name: otlp
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP

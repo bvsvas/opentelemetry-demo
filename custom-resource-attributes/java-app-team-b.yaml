@@ -1,0 +1,52 @@
+# -----------------------------------------------------------------------------
+# NOTE: This deployment is an example for illustration purposes.
+# Please ensure you use the correct application image, configuration parameters,
+# and adjust resource requests/limits appropriately for your actual environment.
+# -----------------------------------------------------------------------------
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: java-app-team-b
+  namespace: otel-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: java-app-team-b
+  template:
+    metadata:
+      labels:
+        app: java-app-team-b
+    spec:
+      containers:
+        - name: java-app
+          image: ghcr.io/open-telemetry/opentelemetry-demo:1.2.0-adservice # Sample Java app
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector-custom:4317"
+            # Adding custom resource attributes via environment variable
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "broadcom_organization=Broadcom,broadcom_division=AOD,broadcom_github_repo=sample-repo-beta,broadcom_valuestream=APPNETA,broadcom_user_id=demo-user-02,service.name=java-app-team-b"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: java-app-team-b
+  namespace: otel-demo
+spec:
+  selector:
+    app: java-app-team-b
+  ports:
+    - port: 8080
+      targetPort: 8080
