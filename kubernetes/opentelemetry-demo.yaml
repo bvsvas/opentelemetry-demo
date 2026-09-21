@@ -469,6 +469,7 @@ data:
           otelcol_name: oteldemo-dxo2
           otelcol_connector_name: otel-collector-self-monitoring
           otelcol_hostname: "${env:MY_POD_IP}"
+          broadcomAgentTriplet: "{otelcol_name}|{otelcol_connector_name}|{otelcol_hostname}"
         metrics:
           level: detailed
           readers:
